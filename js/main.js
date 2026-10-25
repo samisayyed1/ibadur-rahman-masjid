@@ -5,15 +5,26 @@
   // donateUrl:   your checkout link (LaunchGood, Stripe, Iqraa, etc.).
   //              While empty, every Donate button scrolls to the giving section.
   // amountParam: query parameter used to pre-fill the amount (set "" to disable).
-  // raised:      amount raised so far in USD (null hides the progress bar).
+  // goal:        fundraising goal in USD (used for the progress bars and % maths).
+  // progressUrl: JSON file or API returning {"raised": 12345, "donors": 67}.
+  //              Edit data/progress.json to update every progress bar on the page.
+  // raised:      fallback amount if progressUrl can't be reached.
   // ramadan:     first night of Ramadan (first Taraweeh), Syria time UTC+3.
+  // heroVideo:   the film in the hero card. src = an .mp4 path OR a YouTube / Vimeo link.
   // ---------------------------------------------------------------
   const CONFIG = {
     donateUrl: "",
     amountParam: "amount",
-    goal: 104000,
-    raised: null,
+    goal: 124000,
+    progressUrl: "data/progress.json",
+    raised: 0,
     ramadan: "2027-02-07T18:00:00+03:00",
+    heroVideo: {
+      src: "assets/video/film.mp4",
+      poster: "assets/img/mihrab-sm.webp",
+      label: "Watch the film",
+      length: "0:39",
+    },
   };
 
   const $ = (s, el = document) => el.querySelector(s);
@@ -27,14 +38,98 @@
   const onScrollHeader = () => header.classList.toggle("is-solid", window.scrollY > 40);
   onScrollHeader();
 
-  // ---------- progress ----------
-  if (typeof CONFIG.raised === "number") {
-    const box = $("[data-progress]");
-    const pct = Math.min(100, (CONFIG.raised / CONFIG.goal) * 100);
-    box.hidden = false;
-    $("[data-raised]", box).textContent = fmt(CONFIG.raised) + " raised";
-    $("[data-pct]", box).textContent = pct.toFixed(0) + "%";
-    requestAnimationFrame(() => setTimeout(() => ($(".progress__fill", box).style.width = pct + "%"), 400));
+  // ---------- donation progress ----------
+  // Portable: every [data-progress-bar] reads from one source, in this order:
+  //   1. window.IBADUR_PROGRESS = {raised, donors}  (e.g. printed by a CMS / WordPress)
+  //   2. CONFIG.progressUrl  (JSON, refreshed every 60 s)
+  //   3. CONFIG.raised
+  const bars = $$("[data-progress-bar]");
+  const paintProgress = ({ raised = 0, donors = 0, goal = CONFIG.goal } = {}) => {
+    raised = Math.max(0, Number(raised) || 0);
+    goal = Number(goal) || CONFIG.goal;
+    const pct = (raised / goal) * 100;
+    const shown = raised > 0 ? Math.max(pct, 1.5) : 0;
+    const pctText = pct >= 10 || pct === 0 ? Math.floor(pct) + "%" : pct.toFixed(1) + "%";
+    bars.forEach((bar) => {
+      const fill = $("[data-fill]", bar);
+      if (fill) fill.style.width = Math.min(100, shown) + "%";
+      const pb = $("[role=progressbar]", bar);
+      if (pb) pb.setAttribute("aria-valuenow", Math.min(100, Math.floor(pct)));
+      $$("[data-raised-text]", bar).forEach((e) => (e.textContent = fmt(raised)));
+      $$("[data-pct-text]", bar).forEach((e) => (e.textContent = pctText));
+      const dn = $("[data-donors-text]", bar);
+      if (dn) {
+        dn.hidden = !(donors > 0);
+        dn.textContent = Number(donors).toLocaleString("en-US") + (donors == 1 ? " donor" : " donors");
+      }
+    });
+  };
+  const loadProgress = async () => {
+    if (window.IBADUR_PROGRESS) return paintProgress(window.IBADUR_PROGRESS);
+    if (CONFIG.progressUrl) {
+      try {
+        const u = CONFIG.progressUrl + (CONFIG.progressUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
+        const r = await fetch(u, { cache: "no-store" });
+        if (r.ok) return paintProgress(await r.json());
+      } catch (e) {}
+    }
+    paintProgress({ raised: CONFIG.raised });
+  };
+  if (bars.length) {
+    paintProgress({ raised: CONFIG.raised });
+    setTimeout(loadProgress, 300);
+    setInterval(loadProgress, 60000);
+  }
+
+  // ---------- hero film (pop-up player) ----------
+  const hf = $("[data-hero-film]");
+  const vm = $("[data-vmodal]");
+  const vmFrame = $("[data-vmodal-frame]");
+  const embedFor = (src) => {
+    const yt = src.match(/(?:youtu\.be\/|[?&]v=|embed\/|shorts\/)([\w-]{11})/);
+    if (yt) return `https://www.youtube-nocookie.com/embed/${yt[1]}?autoplay=1&rel=0&playsinline=1&modestbranding=1`;
+    const vi = src.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+    if (vi) return `https://player.vimeo.com/video/${vi[1]}?autoplay=1&title=0&byline=0&portrait=0`;
+    return null;
+  };
+  let vmLast = null;
+  const closeVideo = () => {
+    vm.classList.remove("open");
+    vmFrame.innerHTML = "";
+    vmFrame.style.aspectRatio = "";
+    document.body.style.overflow = "";
+    vmLast?.focus();
+  };
+  const openVideo = () => {
+    const v = CONFIG.heroVideo;
+    vmLast = document.activeElement;
+    const embed = embedFor(v.src);
+    if (embed) {
+      vmFrame.innerHTML = `<iframe src="${embed}" title="${v.label}" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen></iframe>`;
+    } else {
+      const vid = document.createElement("video");
+      Object.assign(vid, { src: v.src, controls: true, autoplay: true, playsInline: true });
+      vid.addEventListener("loadedmetadata", () => {
+        if (vid.videoWidth) vmFrame.style.aspectRatio = `${vid.videoWidth} / ${vid.videoHeight}`;
+      });
+      vmFrame.appendChild(vid);
+      vid.play().catch(() => {});
+    }
+    vm.classList.add("open");
+    document.body.style.overflow = "hidden";
+    $("[data-vmodal-close]").focus();
+  };
+  if (hf && vm) {
+    const v = CONFIG.heroVideo;
+    $("[data-hero-film-poster]", hf).src = v.poster;
+    $("[data-hero-film-label]", hf).textContent = v.label;
+    const len = $("[data-hero-film-len]", hf);
+    len.textContent = v.length || "";
+    hf.setAttribute("aria-label", "Play: " + v.label);
+    hf.addEventListener("click", openVideo);
+    $("[data-vmodal-close]").addEventListener("click", closeVideo);
+    vm.addEventListener("click", (e) => { if (e.target === vm) closeVideo(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && vm.classList.contains("open")) closeVideo(); });
   }
 
   // ---------- countdown ----------
