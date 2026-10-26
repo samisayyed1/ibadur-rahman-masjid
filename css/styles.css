@@ -909,3 +909,40 @@ h1, h2, h3, p, li, summary { overflow-wrap: break-word; }
 .mbar__progress i { background: var(--cta); }
 /* revealed buttons never sit half-faded */
 .js .btn.rv { transition: opacity .6s var(--ease), transform .6s var(--ease), background .25s, box-shadow .35s; }
+
+/* ---------- CTA glow: breathing halo + outward ripple on every action button ---------- */
+.btn:not(.btn--ghost) {
+  position: relative;
+  animation: ctaGlow 2.6s ease-in-out infinite;
+}
+.btn:not(.btn--ghost)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 2px solid rgba(255, 150, 30, 0.85);
+  pointer-events: none;
+  opacity: 0;
+  animation: ctaRipple 2.6s cubic-bezier(.2, .7, .3, 1) infinite;
+}
+.btn:not(.btn--ghost):hover { animation-play-state: paused; box-shadow: 0 0 44px 12px rgba(255, 138, 0, .75), 0 16px 40px -10px rgba(255, 138, 0, .8), inset 0 1px 0 rgba(255, 255, 255, .4); }
+@keyframes ctaGlow {
+  0%, 100% { box-shadow: 0 0 16px 2px rgba(255, 138, 0, .45), 0 10px 28px -10px rgba(255, 138, 0, .65), inset 0 1px 0 rgba(255, 255, 255, .35); }
+  50%      { box-shadow: 0 0 36px 9px rgba(255, 138, 0, .72), 0 14px 38px -10px rgba(255, 138, 0, .8), inset 0 1px 0 rgba(255, 255, 255, .35); }
+}
+@keyframes ctaRipple {
+  0%   { opacity: .8; transform: scale(1, 1); }
+  70%  { opacity: 0;  transform: scale(1.07, 1.45); }
+  100% { opacity: 0;  transform: scale(1.07, 1.45); }
+}
+/* small buttons ripple a little less so they don't hit the edges */
+.nav .btn::after, .mbar .btn::after { animation-name: ctaRippleSm; }
+@keyframes ctaRippleSm {
+  0%   { opacity: .8; transform: scale(1, 1); }
+  70%  { opacity: 0;  transform: scale(1.08, 1.32); }
+  100% { opacity: 0;  transform: scale(1.08, 1.32); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn:not(.btn--ghost) { animation: none; box-shadow: 0 0 28px 6px rgba(255, 138, 0, .6), 0 12px 32px -10px rgba(255, 138, 0, .7), inset 0 1px 0 rgba(255, 255, 255, .35); }
+  .btn:not(.btn--ghost)::after { animation: none; opacity: 0; }
+}
